@@ -1,2 +1,2 @@
 # ButterflyNet
-Model architecture with hierarchical transformers
+A hierarchical transformer model architecture with a configurable number of levels.
