@@ -37,15 +37,15 @@ class ButterflyNet(Module):
     def forward(self, src, tgt, src_mask=None, tgt_mask=None,
                 memory_mask=None, src_key_padding_mask=None,
                 tgt_key_padding_mask=None, memory_key_padding_mask=None):
-        tgt = _param_tuple(tgt)
-        src_mask = _param_tuple(src_mask)
-        tgt_mask = _param_tuple(tgt_mask)
-        memory_mask = _param_tuple(memory_mask)
-        src_key_padding_mask = _param_tuple(src_key_padding_mask)
-        tgt_key_padding_mask = _param_tuple(tgt_key_padding_mask)
-        memory_key_padding_mask = _param_tuple(memory_key_padding_mask)
-        identity = []
+        tgt = self._param_tuple(tgt)
+        src_mask = self._param_tuple(src_mask)
+        tgt_mask = self._param_tuple(tgt_mask)
+        memory_mask = self._param_tuple(memory_mask)
+        src_key_padding_mask = self._param_tuple(src_key_padding_mask)
+        tgt_key_padding_mask = self._param_tuple(tgt_key_padding_mask)
+        memory_key_padding_mask = self._param_tuple(memory_key_padding_mask)
         x = src
+        identity = []
         for i in range(self.n_levels):
             x = x.view(-1, src.shape[-2], x.shape[-1])
             x = self.transformers[i].encoder(
@@ -53,17 +53,23 @@ class ButterflyNet(Module):
             identity.append(x)
             if i < self.n_levels - 1:
                 x = x.view(src.shape[i], -1, x.shape[-1])
-                x = self.encoder_rnns[i](x)[-1]
-                # x = x.view(*src.shape[i + 1:-1], x.shape[-1])
+                x = self.encoder_rnns[i](x)[0][-1]
         for i in range(self.n_levels):
             if i > 0:
-                x = x.view()
+                x = x.view(1, -1, x.shape[-1])
+                h = None
                 gen = []
-                for j in range(tgt[i].shape[])
-            x = x.view()
+                for j in range(tgt[i].shape[0]):
+                    x, h = self.decoder_rnns[-i - 1](x, h)
+                    gen.append(x[-1])
+                x = torch.stack(gen)
             x = self.transformers[-i - 1].decoder(
-                )
+                tgt[i], x, tgt_mask=tgt_mask[i], memory_mask=memory_mask[i],
+                tgt_key_padding_mask=tgt_key_padding_mask[i],
+                memory_key_padding_mask=memory_key_padding_mask[i])
             x += identity[-i - 1]
+        x = x.view(*tgt[-1].shape)
+        return x
 
     def _param_tuple(self, param):
         if type(param) in (tuple, list):
