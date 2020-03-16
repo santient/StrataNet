@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from torch.nn import Transformer, Linear, Module, ModuleList
+from torch.nn import Transformer, Linear, Module, ModuleList, Identity
 
 
 # class VADLatent(Module):
@@ -10,14 +10,16 @@ from torch.nn import Transformer, Linear, Module, ModuleList
 #             self.init_latent()
 
 class StrataVAD(Module):
-    def __init__(self, n_levels, latent_dim, d_model=512, nhead=8,
-                 num_layers=6, dim_feedforward=2048, dropout=0.1):
+    def __init__(self, n_levels, latent_dim, d_model, nhead,
+                 num_layers, dim_feedforward, dropout, linears=True):
         super(StrataVAD, self).__init__()
         if n_levels < 1:
             raise ValueError("n_levels must be at least 1")
         self.n_levels = n_levels
         self.latent_dim = latent_dim
         self.d_model = self._param_tuple(d_model)
+        if not linears and len(set(self.d_model)) > 1:
+            raise ValueError("all d_model must be the same without linears")
         self.nhead = self._param_tuple(nhead)
         self.num_layers = self._param_tuple(num_layers)
         self.dim_feedforward = self._param_tuple(dim_feedforward)
@@ -29,25 +31,31 @@ class StrataVAD(Module):
             #     self.num_layers[i], LayerNorm(self.d_model[i]))
             Transformer(d_model=self.d_model[i], nhead=self.nhead[i], num_encoder_layers=0,
                         num_decoder_layers=self.num_layers[i], dim_feedforward=self.dim_feedforward[i],
-                        dropout=self.dropout[i], custom_encoder=lambda x, **kwargs: x)
+                        dropout=self.dropout[i], custom_encoder=Identity())
             for i in range(self.n_levels)])
-        self.linears = ModuleList([
-            Linear(self.d_model[i - 1] if i > 0 else self.latent_dim, self.d_model[i])
-            for i in range(self.n_levels)])
+        if linears:
+            self.linears = ModuleList([
+                Linear(self.d_model[i - 1] if i > 0 else self.latent_dim, self.d_model[i])
+                for i in range(self.n_levels)])
+        else:
+            self.linears = None
 
     def forward(self, latent, seq_dims):
         if len(seq_dims) != self.n_levels:
             raise RuntimeError("number of seq_dims must be n_levels")
         device = latent.device
+        batch_dim = latent.shape[0]
         x = latent
         for i in range(self.n_levels):
             x = x.view(-1, x.shape[-1])
-            x = self.linears[i](x)
+            if self.linears is not None:
+                x = self.linears[i](x)
             x = x.unsqueeze(0)
             tgt = torch.zeros(seq_dims[i], x.shape[-2], x.shape[-1], device=device)
             # mask = torch.ones(x.shape[-2], seq_dims[i], dtype=torch.bool, device=device)
             x = self.transformers[i].decoder(tgt, x)
-        return x.view(*seq_dims, -1, x.shape[-1])
+        # return x.view(*seq_dims, -1, x.shape[-1])
+        return x.view(-1, batch_dim, x.shape[-1]).transpose(0, 1)
 
     # def forward(self, src, tgt, src_mask=None, tgt_mask=None,
     #             memory_mask=None, src_key_padding_mask=None,
