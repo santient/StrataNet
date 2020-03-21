@@ -58,11 +58,11 @@ class StrataLayer(nn.Module):
             self.vertical_ff = nn.Linear(d_model, output_hierarchy_dim)
             self.horizontal_ff = nn.Linear(d_model, output_hierarchy_dim)
 
-    def forward(self, inputs, length, block_size, hierarchy=None):
-        if hierarchy is None:
-            hierarchy = (torch.zeros(inputs.shape[0], inputs.shape[1], self.d_model, device=inputs.device),
-                         torch.zeros(inputs.shape[0], inputs.shape[1], self.d_model, device=inputs.device))
-        vertical, horizontal = hierarchy
+    def forward(self, inputs, length, block_size, hierarchy_params=None):
+        if hierarchy_params is None:
+            hierarchy_params = (torch.zeros(inputs.shape[0], inputs.shape[1], self.d_model, device=inputs.device),
+                                torch.zeros(inputs.shape[0], inputs.shape[1], self.d_model, device=inputs.device))
+        vertical, horizontal = hierarchy_params
         window = []
         pos = 0.0
         in_idx = 0
@@ -115,9 +115,9 @@ class StrataLayer(nn.Module):
                 if self.output_hierarchy:
                     v = torch.stack([item[4][out_idx - item[0]] for item in window])
                     h = torch.stack([item[5][out_idx - item[0]] for item in window])
-                    outv = self.vertical_ff(torch.sum(scale * v, dim=0))
+                    outv = torch.sum(scale * v, dim=0)
                     out_vertical.append(outv)
-                    outh = self.horizontal_ff(torch.sum(scale * h, dim=0))
+                    outh = torch.sum(scale * h, dim=0)
                     out_horizontal.append(outh)
                     del v, h
                 del scale
@@ -125,8 +125,8 @@ class StrataLayer(nn.Module):
                 raise RuntimeError("block_size too low to capture full sequence")
         out = torch.stack(out)
         if self.output_hierarchy:
-            out_vertical = torch.stack(out_vertical)
-            out_horizontal = torch.stack(out_horizontal)
-            return out, out_vertical, out_horizontal
+            out_vertical = self.vertical_ff(torch.stack(out_vertical))
+            out_horizontal = self.horizontal_ff(torch.stack(out_horizontal))
+            return out, (out_vertical, out_horizontal)
         else:
             return out
