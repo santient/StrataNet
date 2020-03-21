@@ -25,7 +25,7 @@ def train(model, dset, params, device, out_dir):
         for idx, x in tqdm.tqdm(dataloader):
             x = x.to(device)
             z = latent[idx].unsqueeze(0)
-            print(x.shape[1])
+            # print(x.shape[1])
             gen = model(z, x.shape[1])
             loss = criterion(gen, x)
             avg_loss.append(loss.detach())
@@ -33,7 +33,7 @@ def train(model, dset, params, device, out_dir):
             latent_opts[idx].zero_grad()
             loss.backward()
             model_opt.step()
-            latent_opt.step()
+            latent_opts[idx].step()
         avg_loss = mean(avg_loss)
         if avg_loss < best_loss:
             time_since_improvement = 0

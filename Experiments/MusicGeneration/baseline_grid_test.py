@@ -18,4 +18,4 @@ if __name__=="__main__":
     grid.shuffle_grid()
     grid.generate_shell_instances(prefix="python3 ", postfix=">& stdoutput.txt")
     # total_at_a_time = 8
-    grid.create_runner(num_runners=None, runners_prefix=["sbatch -p gpu_high -c 1 --gres=gpu:4"])
+    grid.create_runner(num_runners=None, runners_prefix=["sbatch -p gpu_high -c 1 --gres=gpu:1"])

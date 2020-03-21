@@ -1,11 +1,11 @@
 import torch
 from torch import nn
 
-from StrataNet import StrataLayer
+from strata_layer import StrataLayer
 
 
 class HierarchicalModel(nn.Module):
-    def __init__(self, latent_dims, tier_lengths, num_tiers=3, nhead=8, dim_feedforward=2048, dropout=0.1, num_layers=6, block_size=1024):
+    def __init__(self, latent_dims, tier_lengths, num_tiers=3, nhead=8, dropout=0.1, num_layers=6, block_size=1024):
         super(HierarchicalModel, self).__init__()
         assert len(latent_dims) == num_tiers + 1
         assert len(tier_lengths) == num_tiers - 1
@@ -13,12 +13,11 @@ class HierarchicalModel(nn.Module):
         self.tier_lengths = tier_lengths
         self.num_tiers = num_tiers
         self.nhead = nhead
-        self.dim_feedforward = dim_feedforward
         self.dropout = dropout
         self.num_layers = num_layers
         self.block_size = block_size
         self.tiers = nn.ModuleList(
-            StrataLayer(latent_dims[i], latent_dims[i + 1], nhead=nhead, dim_feedforward=dim_feedforward,
+            StrataLayer(latent_dims[i], latent_dims[i + 1], nhead=nhead, dim_feedforward=latent_dims[i] * 4,
                 dropout=dropout, num_layers=num_layers, output_hierarchy=i < num_tiers - 1,
                 output_hierarchy_dim=latent_dims[i + 2] if i < num_tiers - 1 else None)
             for i in range(num_tiers))
