@@ -50,19 +50,19 @@ class StrataLayer(nn.Module):
         window = []
         pos = 0.0
         in_idx = 0
-        out = torch.zeros(length, inputs.shape[1], inputs.shape[2], device=inputs.device)
+        out = []
         if self.output_hierarchy:
-            out_vertical = torch.zeros_like(out)
-            out_horizontal = torch.zeros_like(out)
+            out_vertical = []
+            out_horizontal = []
         for out_idx in range(length):
             low = out_idx - block_size // 2
             high = out_idx + block_size // 2
             while len(window) > 0 and window[0][0] < out_idx:
                 del window[0]
             while in_idx < inputs.shape[0] and high >= pos:
-                low_pos = int(pos) - block_size // 2
-                high_pos = int(pos) + block_size // 2
-                enc = self.pe(inputs[in_idx].repeat(block_size, 1, 1), low_pos)
+                low_pos = max(0, int(pos) - block_size // 2)
+                high_pos = min(length, int(pos) + block_size // 2)
+                enc = self.pe(inputs[in_idx].repeat(high_pos - low_pos, 1, 1), low_pos)
                 v_in = vertical[in_idx]
                 h_in = horizontal[in_idx]
                 x_out = self.output_transformer(enc)
@@ -77,22 +77,25 @@ class StrataLayer(nn.Module):
                     pos += (length - 1) / (inputs.shape[0] - 1)
             if len(window) > 0:
                 v = torch.stack([item[2] for item in window])
-                h = torch.stack([item[3] for item in window])
+                h = (length / inputs.shape[0]) * torch.stack([item[3] for item in window])
                 m = torch.tensor([item[0] - block_size // 2 for item in window], device=inputs.device).view(-1, 1, 1)
                 scale = self.hf(v, h, m, out_idx)
                 x = torch.stack([item[1][out_idx - item[0]] for item in window])
                 outx = torch.sum(scale * x, dim=0)
-                out[out_idx] = outx
+                out.append(outx)
                 if self.output_hierarchy:
                     v = torch.stack([item[4][out_idx - item[0]] for item in window])
                     h = torch.stack([item[5][out_idx - item[0]] for item in window])
                     outv = torch.sum(scale * v, dim=0)
-                    out_vertical[out_idx] = outv
+                    out_vertical.append(outv)
                     outh = torch.sum(scale * h, dim=0)
-                    out_horizontal[out_idx] = outh
+                    out_horizontal.append(outh)
             else:
-                print("Warning: some sequence information was lost, try increasing block size")
+                raise RuntimeError("Block size too low to capture full sequence")
+        out = torch.stack(out)
         if self.output_hierarchy:
-            return out, (out_vertical, out_horizontal)
+            out_vertical = torch.stack(out_vertical)
+            out_horizontal = torch.stack(out_horizontal)
+            return out, out_vertical, out_horizontal
         else:
             return out
