@@ -2,6 +2,7 @@ import math
 
 import torch
 from torch import nn
+from torch.utils import checkpoint
 
 
 EPS = 1e-10
@@ -65,13 +66,21 @@ class StrataLayer(nn.Module):
                 enc = self.pe(inputs[in_idx].repeat(high_pos - low_pos, 1, 1), low_pos)
                 v_in = vertical[in_idx]
                 h_in = horizontal[in_idx]
-                x_out = self.output_transformer(enc)
+                if torch.is_grad_enabled():
+                    x_out = checkpoint.checkpoint(self.output_transformer, enc)
+                else:
+                    x_out = self.output_transformer(enc)
                 if self.output_hierarchy:
-                    v_out = self.vertical_transformer(enc)
-                    h_out = self.horizontal_transformer(enc)
+                    if torch.is_grad_enabled():
+                        v_out = checkpoint.checkpoint(self.vertical_transformer, enc)
+                        h_out = checkpoint.checkpoint(self.horizontal_transformer, enc)
+                    else:
+                        v_out = self.vertical_transformer(enc)
+                        h_out = self.horizontal_transformer(enc)
                     window.append((high_pos, x_out, v_in, h_in, v_out, h_out))
                 else:
                     window.append((high_pos, x_out, v_in, h_in))
+                del enc
                 in_idx += 1
                 if inputs.shape[0] > 1:
                     pos += (length - 1) / (inputs.shape[0] - 1)
@@ -83,6 +92,7 @@ class StrataLayer(nn.Module):
                 x = torch.stack([item[1][out_idx - item[0]] for item in window])
                 outx = torch.sum(scale * x, dim=0)
                 out.append(outx)
+                del v, h, m, x
                 if self.output_hierarchy:
                     v = torch.stack([item[4][out_idx - item[0]] for item in window])
                     h = torch.stack([item[5][out_idx - item[0]] for item in window])
@@ -90,6 +100,8 @@ class StrataLayer(nn.Module):
                     out_vertical.append(outv)
                     outh = torch.sum(scale * h, dim=0)
                     out_horizontal.append(outh)
+                    del v, h
+                del scale
             else:
                 raise RuntimeError("Block size too low to capture full sequence")
         out = torch.stack(out)
