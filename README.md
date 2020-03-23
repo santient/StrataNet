@@ -1,2 +1,2 @@
 # StrataNet
-A hierarchical transformer model architecture with a configurable number of levels.
+Hierarchical Radial Basis Function Transformers for Long-Range Sequence Modeling with Global Structure
