@@ -25,7 +25,9 @@ class HierarchyFunction(nn.Module):
         super(HierarchyFunction, self).__init__()
 
     def forward(self, vertical, horizontal, mean, idx):
-        return torch.softmax(vertical**2 * torch.exp(-(idx - mean)**2 / (horizontal**2 + EPS)), dim=0)
+        mask = torch.zeros_like(vertical)
+        mask[vertical <= 0] = -float("inf")
+        return torch.softmax(vertical * torch.exp(-(idx - mean)**2 / (2 * horizontal**2 + EPS)) + mask, dim=0)
 
 class StrataLayer(nn.Module):
     def __init__(self, input_dim, d_model, nhead=8, dim_feedforward=1024, dropout=0.1, num_layers=6, output_hierarchy=False, output_hierarchy_dim=None):
@@ -107,20 +109,20 @@ class StrataLayer(nn.Module):
                 v = torch.stack([item[2] for item in window])
                 h = (length / inputs.shape[0]) * torch.stack([item[3] for item in window])
                 m = torch.tensor([item[0] - block_size // 2 for item in window], device=inputs.device).view(-1, 1, 1)
-                scale = self.hierarchy_func(v, h, m, out_idx)
+                hf = self.hierarchy_func(v, h, m, out_idx)
                 x = torch.stack([item[1][out_idx - item[0]] for item in window])
-                outx = torch.sum(scale * x, dim=0)
+                outx = torch.sum(hf * x, dim=0)
                 out.append(outx)
                 del v, h, m, x
                 if self.output_hierarchy:
                     v = torch.stack([item[4][out_idx - item[0]] for item in window])
                     h = torch.stack([item[5][out_idx - item[0]] for item in window])
-                    outv = torch.sum(scale * v, dim=0)
+                    outv = torch.sum(hf * v, dim=0)
                     out_vertical.append(outv)
-                    outh = torch.sum(scale * h, dim=0)
+                    outh = torch.sum(hf * h, dim=0)
                     out_horizontal.append(outh)
                     del v, h
-                del scale
+                del hf
             else:
                 raise RuntimeError("block_size too low to capture full sequence")
         out = torch.stack(out)
