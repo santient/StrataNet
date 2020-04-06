@@ -75,8 +75,8 @@ class SparseKernelMultiheadAttention(nn.Module):
         key = self.key_ff(key).view(n, -1, self.head_dim).transpose(0, 1)
         value = self.value_ff(value).view(n, -1, self.head_dim).transpose(0, 1)
         samples = self.distribution.sample((n, self.num_samples)).round().long()
-        samples = (samples + torch.arange(n, device=device).unsqueeze(1)).clamp(0, n - 1)
-        cols = [samples[i].unique() for i in range(n)]
+        samples = (samples + torch.arange(n).unsqueeze(1)).clamp(0, n - 1)
+        cols = [samples[i].unique().to(device) for i in range(n)]
         del samples
         rows = [torch.tensor(i, device=device).repeat(cols[i].size(0)) for i in range(n)]
         vals = [torch.softmax((query[:, rows[i], :] * key[:, cols[i], :]).sum(-1) / math.sqrt(n), dim=-1) for i in range(n)]
