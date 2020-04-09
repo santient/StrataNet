@@ -15,8 +15,6 @@ if __name__=="__main__":
     grid.register("num_layers", [6])
     grid.register("dropout", [0.1])
     grid.register("block_size", [50])
-    grid.register("attn_span", [50])
-    grid.register("kernel_var", [10])
     grid.register("data_dir", ["/results/sbenoit/datasets/lpd_processed/"])
     grid.generate_grid()
     grid.shuffle_grid()

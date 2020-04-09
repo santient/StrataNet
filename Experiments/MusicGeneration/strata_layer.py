@@ -4,7 +4,7 @@ import torch
 from torch import nn
 # from torch.utils import checkpoint
 
-from sparse_attn import SparseKernelMultiheadAttention
+# from sparse_attn import SparseKernelMultiheadAttention
 
 
 EPS = 1e-10
@@ -169,18 +169,16 @@ def replace_modules(model, target, replacement, *args, **kwargs):
 #     return torch.sparse.FloatTensor(x.indices(), vals, x.size())
 
 class StrataTier(nn.Module):
-    def __init__(self, input_dim, d_model, hierarchy_kernel, attn_kernel, nhead=8, dim_feedforward=1024, dropout=0.1, num_layers=6, block_size=1000, attn_span=100):
+    def __init__(self, input_dim, d_model, kernel, nhead=8, dim_feedforward=1024, dropout=0.1, num_layers=6, block_size=1000):
         super(StrataTier, self).__init__()
         self.input_dim = input_dim
         self.d_model = d_model
-        self.hierarchy_kernel = hierarchy_kernel
-        self.attn_kernel = attn_kernel
+        self.kernel = kernel
         self.nhead = nhead
         self.dim_feedforward = dim_feedforward
         self.dropout = dropout
         self.num_layers = num_layers
         self.block_size = block_size
-        self.attn_span = attn_span
         self.input_ff = nn.Sequential(
             nn.Linear(input_dim, dim_feedforward),
             nn.ReLU(),
@@ -207,7 +205,7 @@ class StrataTier(nn.Module):
         rows = [torch.tensor(i, device=inputs.device).repeat(min(length, i + self.block_size + 1) - max(0, i - self.block_size)) for i in range(inputs.size(0))]
         cols = [torch.arange(max(0, i - self.block_size), min(length, i + self.block_size + 1), device=inputs.device) for i in range(inputs.size(0))]
         vals = torch.cat([self.transformer(self.input_ff(positional_encoding(inputs[i].repeat(min(length, i + self.block_size + 1) - max(0, i - self.block_size), 1, 1), max(0, i - self.block_size)))) for i in range(inputs.size(0))])
-        hier = torch.cat([self.hierarchy_kernel(rows[i].unsqueeze(1), cols[i].unsqueeze(1), kernel_params[i], hscale).unsqueeze(2) for i in range(inputs.size(0))])
+        hier = torch.cat([self.kernel(rows[i].unsqueeze(1), cols[i].unsqueeze(1), kernel_params[i], hscale).unsqueeze(2) for i in range(inputs.size(0))])
         rows = torch.cat(rows)
         cols = torch.cat(cols)
         v_matrix = torch.zeros(inputs.size(0), length, inputs.size(1), self.d_model, device=inputs.device)

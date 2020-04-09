@@ -22,9 +22,7 @@ def get_arguments():
     parser.register_parameter("--num_tiers", int, 3)
     parser.register_parameter("--num_layers", int, 6)
     parser.register_parameter("--dropout", float, 0.1)
-    parser.register_parameter("--block_size", int, 500)
-    parser.register_parameter("--attn_span", int, 50)
-    parser.register_parameter("--kernel_var", float, 10)
+    parser.register_parameter("--block_size", int, 50)
     parser.register_parameter("--data_dir", str, "/results/sbenoit/datasets/lpd_processed/")
     args = parser.compile_argparse()
     return args
@@ -40,7 +38,7 @@ if __name__ == "__main__":
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
     dset = dataset.PianorollDataset(params["data_dir"])
-    model = hierarchical.HierarchicalModel(params["latent_dims"], params["tier_lengths"], params["num_tiers"], params["dropout"], params["num_layers"], params["block_size"], params["attn_span"], params["kernel_var"]).to(device)
+    model = hierarchical.HierarchicalModel(params["latent_dims"], params["tier_lengths"], params["num_tiers"], params["dropout"], params["num_layers"], params["block_size"]).to(device)
     results = train.train(model, dset, params, device, out_dir)
     print("Results:", str(results))
     # generate.generate(model, dset, params, device, out_dir)
