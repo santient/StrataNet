@@ -144,12 +144,13 @@ def positional_encoding(x, start_idx=0):
 #         else:
 #             return out
 
-def gaussian_kernel(x, z, params):
+def gaussian_kernel(x, z, params, hscale):
     vertical = params[:, 0].unsqueeze(0)
-    horizontal = params[:, 1].unsqueeze(0)
-    mask = torch.zeros_like(vertical)
-    mask[vertical <= 0] = -float("inf")
-    return vertical * torch.exp(-(x - z) ** 2 / (2 * horizontal ** 2 + EPS)) + mask
+    horizontal = hscale * params[:, 1].unsqueeze(0)
+    # mask = torch.zeros_like(vertical)
+    # mask[vertical <= 0] = -float("inf")
+    # print(torch.softmax(vertical * torch.exp(-(x - z) ** 2 / (2 * horizontal ** 2 + EPS)) + mask, dim=0))
+    return vertical.abs() * torch.exp(-(x - z) ** 2 / (2 * horizontal ** 2 + EPS))
 
 def replace_modules(model, target, replacement, *args, **kwargs):
     for attr in dir(model):
@@ -158,6 +159,14 @@ def replace_modules(model, target, replacement, *args, **kwargs):
             setattr(model, attr, replacement(*args, **kwargs))
     for child in model.children():
         replace_modules(child, target, replacement, *args, **kwargs)
+
+# def sparse_softmax(x):
+#     # softmax along first dimension of sparse matrix, masking out missing values
+#     vals = torch.zeros_like(x.values())
+#     for i in range(x.size(1)):
+#         idxs = x.indices()[:, x.indices()[1] == i]
+#         vals[idxs] = torch.softmax(x.values()[idxs], dim=0)
+#     return torch.sparse.FloatTensor(x.indices(), vals, x.size())
 
 class StrataTier(nn.Module):
     def __init__(self, input_dim, d_model, hierarchy_kernel, attn_kernel, nhead=8, dim_feedforward=1024, dropout=0.1, num_layers=6, block_size=1000, attn_span=100):
@@ -184,14 +193,27 @@ class StrataTier(nn.Module):
             nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout),
             num_layers)
         replace_modules(self.transformer, nn.MultiheadAttention, SparseKernelMultiheadAttention, d_model, nhead, attn_kernel, dropout, attn_span)
+        self._reset_parameters()
+
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
     def forward(self, inputs, length):
+        # TODO use sparse tensors once they support softmax
+        hscale = length / inputs.size(0)
         kernel_params = self.kernel_ff(inputs)
         rows = [torch.tensor(i, device=inputs.device).repeat(min(length, i + self.block_size + 1) - max(0, i - self.block_size)) for i in range(inputs.size(0))]
         cols = [torch.arange(max(0, i - self.block_size), min(length, i + self.block_size + 1), device=inputs.device) for i in range(inputs.size(0))]
-        vals = torch.cat([self.transformer(self.input_ff(positional_encoding(inputs[i].repeat(min(length, i + self.block_size + 1) - max(0, i - self.block_size), 1, 1), max(0, i - self.block_size)))) * self.hierarchy_kernel(rows[i].unsqueeze(1), cols[i].unsqueeze(1), kernel_params[i]).unsqueeze(2) for i in range(inputs.size(0))])
+        vals = torch.cat([self.transformer(self.input_ff(positional_encoding(inputs[i].repeat(min(length, i + self.block_size + 1) - max(0, i - self.block_size), 1, 1), max(0, i - self.block_size)))) for i in range(inputs.size(0))])
+        hier = torch.cat([self.hierarchy_kernel(rows[i].unsqueeze(1), cols[i].unsqueeze(1), kernel_params[i], hscale).unsqueeze(2) for i in range(inputs.size(0))])
         rows = torch.cat(rows)
         cols = torch.cat(cols)
-        idxs = torch.stack([rows, cols])
-        out = torch.sparse.sum(torch.sparse.FloatTensor(idxs, vals, (inputs.size(0), length, inputs.size(1), inputs.size(2))), dim=0)
+        v_matrix = torch.zeros(inputs.size(0), length, inputs.size(1), self.d_model, device=inputs.device)
+        v_matrix[rows, cols] = vals
+        h_matrix = torch.full((inputs.size(0), length, inputs.size(1), 1), -float("inf"), device=inputs.device)
+        h_matrix[rows, cols] = hier
+        h_matrix = torch.softmax(h_matrix, dim=0)
+        out = torch.sum(v_matrix * h_matrix, dim=0)
         return out
