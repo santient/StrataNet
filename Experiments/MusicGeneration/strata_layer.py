@@ -145,12 +145,12 @@ def positional_encoding(x, start_idx=0):
 #             return out
 
 def gaussian_kernel(x, z, params, hscale):
-    vertical = params[:, 0].unsqueeze(0)
+    vertical = params[:, 0].unsqueeze(0).abs()
     horizontal = hscale * params[:, 1].unsqueeze(0)
     # mask = torch.zeros_like(vertical)
     # mask[vertical <= 0] = -float("inf")
     # print(torch.softmax(vertical * torch.exp(-(x - z) ** 2 / (2 * horizontal ** 2 + EPS)) + mask, dim=0))
-    return vertical.abs() * torch.exp(-(x - z) ** 2 / (2 * horizontal ** 2 + EPS))
+    return vertical * torch.exp(-(x - z) ** 2 / (2 * horizontal ** 2 + EPS))
 
 def replace_modules(model, target, replacement, *args, **kwargs):
     for attr in dir(model):
@@ -202,9 +202,9 @@ class StrataTier(nn.Module):
         # TODO use sparse tensors once they support softmax
         hscale = length / inputs.size(0)
         kernel_params = self.kernel_ff(inputs)
-        rows = [torch.tensor(i, device=inputs.device).repeat(min(length, i + self.block_size + 1) - max(0, i - self.block_size)) for i in range(inputs.size(0))]
-        cols = [torch.arange(max(0, i - self.block_size), min(length, i + self.block_size + 1), device=inputs.device) for i in range(inputs.size(0))]
-        vals = torch.cat([self.transformer(self.input_ff(positional_encoding(inputs[i].repeat(min(length, i + self.block_size + 1) - max(0, i - self.block_size), 1, 1), max(0, i - self.block_size)))) for i in range(inputs.size(0))])
+        rows = [torch.tensor(i, device=inputs.device).repeat(min(length, int(i * hscale) + self.block_size + 1) - max(0, int(i * hscale) - self.block_size)) for i in range(inputs.size(0))]
+        cols = [torch.arange(max(0, int(i * hscale) - self.block_size), min(length, int(i * hscale) + self.block_size + 1), device=inputs.device) for i in range(inputs.size(0))]
+        vals = torch.cat([self.transformer(self.input_ff(positional_encoding(inputs[i].repeat(min(length, int(i * hscale) + self.block_size + 1) - max(0, int(i * hscale) - self.block_size), 1, 1), max(0, int(i * hscale) - self.block_size)))) for i in range(inputs.size(0))])
         hier = torch.cat([self.kernel(rows[i].unsqueeze(1), cols[i].unsqueeze(1), kernel_params[i], hscale).unsqueeze(2) for i in range(inputs.size(0))])
         rows = torch.cat(rows)
         cols = torch.cat(cols)
